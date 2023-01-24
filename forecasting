@@ -1,0 +1,189 @@
+
+library(forecast) # autoplot, auto-arima, ets
+library(tseries)  # adf
+library(lmtest)
+
+
+print(getwd())
+setwd("C:/Users/liewm/OneDrive/Desktop/Y2S1 assignment")
+data <- read.csv("AirPassengers.csv")
+View(data)
+
+sum(is.na(data))
+
+head(data)
+
+tail(data)
+
+#retrieve the dimension of object
+dim(data)
+
+#check the data type of each column in dataframe
+str(data)
+
+summary(data)
+
+
+
+## Plot time series
+#y <- data[c("S4248SM144NCEN")]
+#Y <- ts(y, frequency = 12, start = c(1992,1), end = c(2019,1))
+#plot(Y, col = "Purple", xlim = c(1992,2019), xlab = "Year", ylab = "Alcohol sales",
+#main = "Sales from 1992-2019")
+y <- data[c("X.Passengers")]
+Y <- ts(y, frequency =12, start = c(1949,1), end = c(1960,12))
+plot(Y, col = "Purple", xlim = c(1949,1960), xlab = "Year", ylab = "passengers",
+     main = "Sales from 1949-1960")
+
+ACF <- acf(Y, main = "Autocorrelations")
+PACF <- pacf(Y, main = "Partial Autocorrelations")
+
+
+
+train <- head(Y, round(length(Y) * 0.8))
+h <- length(Y) - length(train)
+test <- tail(Y, h)
+train
+test
+autoplot(train) + autolayer(test)
+
+
+
+
+
+
+## decomposition multiplicative
+beerprod1 = ts(train, freq = 12)
+decompbeer1 = decompose (beerprod1, type = "multiplicative")
+plot (decompbeer1)
+decompbeer1
+
+
+plot(train)
+abline(reg=lm(train~time(train)))
+
+boxplot(train~cycle(train, xlab="Date", ylab = "Passenger Numbers (1000's)",
+                            main = "Monthly air passengers boxplot from 1949-1960"))
+
+
+
+
+##transformation
+y1<-log(train);y1
+y1<-ts(y1,frequency = 12,start = c(1949,1))
+plot(y1)
+
+#normal differencing
+ndiffs(train)
+#seasonal differencing
+nsdiffs(train)
+
+
+#Trend Differencing (remove non-stationary)
+train1 <- ts(diff(train,lag=12))
+ggtsdisplay(train1)
+adf.test(train1)
+
+ACF <- acf(train1, main = "Autocorrelations")
+PACF <- pacf(train1, main = "Partial Autocorrelations")
+
+#normal differencing
+train2 <- diff(train1)
+ggtsdisplay(train2)
+adf.test(train2)
+
+
+ACF <- acf(train2, main = "Autocorrelations")
+PACF <- pacf(train2, main = "Partial Autocorrelations")
+
+acf(train2,lag=48)
+pacf(train2,lag=48)
+
+#-----------------------------------------------------------------------------------------------------------
+#ARIMA
+#best fit (AIC & RMSE) has smaller value than manual 
+
+fit_arima <- auto.arima(train,d=1,D=1,stepwise=FALSE, approximation = FALSE,trace = TRUE)
+print(summary(fit_arima))#Residual sd: 9.450926 / AIC = 752.94 / RMSE = 8.768814
+#checkresiduals(fit_arima)
+
+
+# ARIMA Approach
+# best fit
+fitb1 <- arima(train, order = c(0,1,3), seasonal = 
+               list(order = c(0,1,0), period = 12))
+acf(ts(fitb1$residuals))
+fitb1$aic
+
+# Box-Pierce Q test(arima)
+Box.test(fitb1$residuals, lag = 12)# p = 0.9271
+# Ljung-Box test
+Box.test(fitb1$residuals, lag = 12, type = "Ljung") # p = 0.8978
+
+
+#-------------------------------------------------------------------------------------
+
+# manual fit
+fitm1 <- arima(train, order = c(1,1,1), seasonal = 
+               list(order = c(1,1,0), period = 12))#residual sd :  9.472592 
+acf(ts(fitm1$residuals))# RMSE = 8.921438 / AIC = 756.41
+fitm1$aic
+print(summary(fitm1))
+
+# Box-Pierce Q test(arima)
+Box.test(fitm1$residuals, lag = 12)# p-value = 0.6712
+# Ljung-Box test
+Box.test(fitm1$residuals, lag = 12, type = "Ljung") # p-value = 0.6106
+
+
+#--------------------------------------------------------------------------------------
+#ETS mmodel
+
+fit_ets <- ets(train) #Residual sd: 0.0375  / RMSE = 8.141851
+print(summary(fit_ets))
+#checkresiduals(fit_ets)
+
+# Box-Pierce Q test
+Box.test(fit_ets$residuals, lag = 12) # p-value = 0.3966
+# Ljung-Box test
+Box.test(fit_ets$residuals, lag = 12, type = "Ljung") # p-value = 0.328
+
+
+
+#---------------------------------------------------------------------------------------
+
+#Holtz Winter multiplicative
+HoltWintersmul <- hw(train,damped = FALSE, seasonal = "multiplicative") # residual = 0.0429
+HoltWintersmul.fit <- fitted(HoltWintersmul) # RMSE = 9.150464
+summary(HoltWintersmul)
+# Box-Pierce Q test
+Box.test(HoltWintersmul$residuals, lag = 12) # p-value = 0.17
+# Ljung-Box test
+Box.test(HoltWintersmul$residuals, lag = 12, type = "Ljung") # p-value = 0.1364
+
+#-----------------------------------------------------------------------------------------
+
+# cal MSE for all model
+#ets
+fit_ets$mse # (66.289737706201)
+
+#arima_best
+mean(fitb1$residuals^2) # 76.89209
+
+#arima_manual
+mean(fitm1$residuals^2) # 79.59206
+
+#holtz winter multi (RMSE ^ 2)
+9.150464^2 # (83.730991415296)
+
+
+
+#------------------------------------------------------------------------------
+#forecast for the model which has the lowest mse
+#ETS has the lowest MSE value so fit it into forecast
+
+fcst <- forecast(fit_ets, h=24)
+autoplot(fcst)
+print(summary(fcst))
+
+
